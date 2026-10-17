@@ -1,0 +1,9 @@
+.gradle/
+build/
+.idea/
+*.iml
+plugins/
+config-local.yml
+src/main/resources/ssh/id_*
+*.key
+*.pem

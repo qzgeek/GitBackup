@@ -1,0 +1,34 @@
+repository:
+  # 备份仓库本地工作目录。相对路径以 plugins/GitBackup 为基准。
+  local-path: backup-repository
+  # 远程 Git 仓库地址。留空时只写入本地仓库，不执行远程拉取/推送。
+  remote-url: ""
+  branch: main
+  # https 或 ssh
+  protocol: https
+  # HTTPS 建议使用 Personal Access Token，不要使用 GitHub 登录密码。
+  https-username: ""
+  https-token: ""
+  # SSH 私钥相对于 plugins/GitBackup 的路径。
+  ssh-key-file: ssh/id_ed25519
+
+worlds:
+  # true：自动读取 Bukkit/Folia 当前已加载世界的实际名称、命名空间和目录。
+  # worlds 插件创建的维度也会自动进入备份目标列表。
+  auto-discover: true
+
+performance:
+  worker-threads: 2
+
+schedules:
+  # Quartz 风格六段表达式：秒 分 时 日 月 星期
+  hourly:
+    cron: "0 0 * * * ?"
+  daily:
+    cron: "0 0 4 * * ?"
+
+restore:
+  # 恢复前自动建立快照。关闭会降低安全性，不建议关闭。
+  create-pre-restore-snapshot: true
+  # 恢复时是否自动将目标区域内玩家传送到目标世界出生点。
+  teleport-players: true

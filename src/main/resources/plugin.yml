@@ -1,0 +1,16 @@
+name: GitBackup
+version: '${version}'
+main: cn.qzgeek.gitbackup.GitBackupPlugin
+api-version: '26.1'
+description: Incremental Git-backed world backup and chunk restore for Folia.
+author: qzgeek
+folia-supported: true
+permissions:
+  gitbackup.admin:
+    description: Full GitBackup administration permission
+    default: op
+commands:
+  gitbackup:
+    description: GitBackup administration command
+    usage: /gitbackup <status|backup|list|restore|rollback>
+    permission: gitbackup.admin
