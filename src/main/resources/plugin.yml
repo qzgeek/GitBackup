@@ -1,5 +1,5 @@
 name: GitBackup
-version: '${version}'
+version: '0.1.0-SNAPSHOT'
 main: cn.qzgeek.gitbackup.GitBackupPlugin
 api-version: '26.1'
 description: Incremental Git-backed world backup and chunk restore for Folia.

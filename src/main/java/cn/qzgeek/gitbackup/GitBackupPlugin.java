@@ -78,7 +78,8 @@ public final class GitBackupPlugin extends JavaPlugin {
     void status(CommandSender sender) {
         sender.sendMessage("§aGitBackup 已启用");
         sender.sendMessage("§7仓库: " + repository.root());
-        sender.sendMessage("§7HEAD: " + CompletableFuture.supplyAsync(() -> { try { return repository.head(); } catch (Exception e) { return e.getMessage(); } }, executor).join());
+        CompletableFuture.supplyAsync(() -> { try { return repository.head(); } catch (Exception e) { return e.getMessage(); } }, executor)
+                .thenAccept(head -> Bukkit.getGlobalRegionScheduler().execute(this, () -> sender.sendMessage("§7HEAD: " + head)));
         sender.sendMessage("§7世界: " + config.discoverWorlds().stream().map(GitBackupConfig.WorldTarget::name).toList());
     }
 
@@ -94,7 +95,8 @@ public final class GitBackupPlugin extends JavaPlugin {
     }
 
     void list(CommandSender sender, String worldName, String chunk) {
-        sender.sendMessage("§e当前仓库 HEAD: " + repository.head());
+        CompletableFuture.supplyAsync(() -> { try { return repository.head(); } catch (Exception e) { return e.getMessage(); } }, executor)
+                .thenAccept(head -> Bukkit.getGlobalRegionScheduler().execute(this, () -> sender.sendMessage("§e当前仓库 HEAD: " + head)));
         sender.sendMessage("§7可用时间点由 Git 提交提供；请将提交短哈希作为 restore 命令最后一个参数。");
         sender.sendMessage("§7目标世界: " + worldName + (chunk == null ? "" : "，区块: " + chunk));
     }
@@ -115,7 +117,10 @@ public final class GitBackupPlugin extends JavaPlugin {
         }, executor).whenComplete((v, error) -> Bukkit.getGlobalRegionScheduler().execute(this, () -> sender.sendMessage(error == null ? "§a恢复完成。请确认目标区块已重新加载。" : "§c恢复失败：" + root(error))));
     }
 
-    void rollback(CommandSender sender, String id) { sender.sendMessage("§e回滚记录查询尚未接入 TUI；恢复前快照已经以 Git 提交保存。最近 HEAD: " + repository.head()); }
+    void rollback(CommandSender sender, String id) {
+        CompletableFuture.supplyAsync(() -> { try { return repository.head(); } catch (Exception e) { return e.getMessage(); } }, executor)
+                .thenAccept(head -> Bukkit.getGlobalRegionScheduler().execute(this, () -> sender.sendMessage("§e回滚记录查询尚未接入 TUI；恢复前快照已经以 Git 提交保存。最近 HEAD: " + head)));
+    }
     private static String root(Throwable t) { while (t.getCause() != null) t = t.getCause(); return t.getMessage(); }
 
     @Override public void onDisable() { if (executor != null) executor.shutdownNow(); if (repository != null) repository.close(); }
