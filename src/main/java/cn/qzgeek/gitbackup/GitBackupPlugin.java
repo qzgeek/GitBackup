@@ -397,6 +397,21 @@ public final class GitBackupPlugin extends JavaPlugin {
                 byFile.computeIfAbsent(w.file(), f -> new LinkedHashMap<>()).put(w.slot(), w.bytes());
             for (var e : byFile.entrySet()) AnvilRegion.replaceInPlace(e.getKey(), e.getValue());
         }
+        // 写完必须复查：区块在写入期间若被服务端重新加载并回存，文件内容会被旧数据覆盖，
+        // 此时"看起来成功"但其实没恢复。宁可判定失败并排队，也不能静默当作已完成。
+        Map<Path, Map<Integer, AnvilRegion.Slot>> after = new LinkedHashMap<>();
+        for (RestoreEngine.Write w : writes) {
+            Map<Integer, AnvilRegion.Slot> slots = after.computeIfAbsent(w.file(), f -> {
+                try {
+                    return AnvilRegion.readSlots(f);
+                } catch (IOException e) {
+                    return Map.of();
+                }
+            });
+            AnvilRegion.Slot slot = slots.get(w.slot());
+            if (slot == null || !java.util.Arrays.equals(slot.bytes(), w.bytes()))
+                failures.putIfAbsent(w.chunk(), "写入后内容被覆盖（区块疑似在写入期间被重新加载并回存）");
+        }
         // 写入期间若区块被重新加载，内存里可能是旧数据，强制丢弃（不保存）让其从磁盘重读。
         for (RestoreEngine.Chunk chunk : chunks) {
             if (failures.containsKey(chunk)) continue;
@@ -559,14 +574,17 @@ public final class GitBackupPlugin extends JavaPlugin {
                         commitManifest(manifest, "rollback " + entry.id);
                         reply(sender, Text.ok("已回滚 " + entry.id + "：" + chunks.size() + " 个区块恢复到恢复前状态"));
                     } else {
+                        // 未真正生效：不能标记为已回滚，否则管理员会误以为已经还原
                         queuePending(target.get(), pre, chunks);
-                        entry.rolledBack = true;
+                        entry.rolledBack = false;
+                        entry.note = "queued|" + entry.note.substring(entry.note.indexOf('|') + 1);
                         commitManifest(manifest, "rollback queued " + entry.id);
                         reply(sender, Text.warn("部分区块需重启应用，已排队: " + failures));
                     }
                 } else {
                     queuePending(target.get(), pre, chunks);
-                    entry.rolledBack = true;
+                    entry.rolledBack = false;
+                    entry.note = "queued|" + entry.note.substring(entry.note.indexOf('|') + 1);
                     commitManifest(manifest, "rollback queued " + entry.id);
                     reply(sender, Text.warn("回滚需要重建 region 文件，已排队在下次启动应用。"));
                 }
