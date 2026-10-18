@@ -19,6 +19,11 @@ dependencies {
     compileOnly(files("/home/xcgeek/.gradle/caches/modules-2/files-2.1/net.md-5/bungeecord-chat/1.21-R0.2-deprecated+build.21/a87a9222a1dcfa429b4a06264899f65313a4ed5c/bungeecord-chat-1.21-R0.2-deprecated+build.21.jar"))
     implementation("org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r")
     implementation("com.cronutils:cron-utils:9.2.1")
+    implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.apache:7.3.0.202506031305-r")
+    implementation("com.google.code.gson:gson:2.11.0")
+    implementation("org.lz4:lz4-java:1.8.0")
+    testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 java {
@@ -32,12 +37,18 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.jar { enabled = false }
 
+tasks.test { useJUnitPlatform() }
+
 tasks.shadowJar {
     archiveClassifier.set("")
+    manifest { attributes["Main-Class"] = "cn.qzgeek.gitbackup.OfflineMain" }
+    mergeServiceFiles()
+    exclude("META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA")
     relocate("org.eclipse.jgit", "cn.qzgeek.gitbackup.libs.jgit")
-    relocate("org.eclipse.jgit", "cn.qzgeek.gitbackup.libs.jgit")
+    relocate("org.apache.sshd", "cn.qzgeek.gitbackup.libs.sshd")
     relocate("com.cronutils", "cn.qzgeek.gitbackup.libs.cronutils")
-    minimize()
+    relocate("com.google.gson", "cn.qzgeek.gitbackup.libs.gson")
+    // No minimize: SSH providers and service-loader implementations must survive shading.
 }
 
 tasks.build { dependsOn(tasks.shadowJar) }
