@@ -158,14 +158,21 @@ final class SnapshotEngine {
         long size = attrs.size();
         long mtime = attrs.lastModifiedTime().to(java.util.concurrent.TimeUnit.NANOSECONDS);
 
+        // 只针对"当前这个 region 文件"对应的对象前缀做继承/清理。
+        // 用目录级前缀会把同目录下其它 region 的对象一并卷进来（曾导致其它区域被误删）。
+        String chunkPrefix = objectBase + "chunks/r." + cx0(rx, rz) + "/";
+        String mccPrefix = objectBase + "mcc/r." + cx0(rx, rz) + "/";
+
         if (index.unchanged(sourceId, size, mtime)) {
-            // 未变更：继承父提交里该区域目录下的全部对象，不读盘
-            int reused = 0;
-            for (String path : tree.pathsWithPrefix(objectBase)) {
+            // 未变更：继承父提交里这个 region 的对象，不读盘
+            for (String path : tree.pathsWithPrefix(chunkPrefix)) {
                 producedPaths.add(path);
-                reused++;
+                counter.reused++;
             }
-            counter.reused += reused;
+            for (String path : tree.pathsWithPrefix(mccPrefix)) {
+                producedPaths.add(path);
+                counter.reused++;
+            }
             return;
         }
 
@@ -199,12 +206,14 @@ final class SnapshotEngine {
                         // poi 等类型不携带坐标：此时只能靠"可解压 + NBT 结构完整"判定完整性
                         if (header.x() != null && (header.x() != cx || header.z() != cz)) {
                             degraded.add(relative + " 区块 " + cx + "," + cz + ": 坐标不一致（疑似读写竞争），已跳过本次更新");
+                            producedPaths.add(path); // 保留父提交里的旧版本，不能被当作"已删除"
                             continue;
                         }
                     } catch (ChunkNbt.Unsupported unsupported) {
                         // 服务端自定义压缩：无法自校验，按原始字节保存但不阻断备份
                     } catch (IOException invalid) {
                         degraded.add(relative + " 区块 " + cx + "," + cz + ": 记录校验失败（" + invalid.getMessage() + "），已跳过本次更新");
+                        producedPaths.add(path); // 同上：保留旧版本
                         continue;
                     }
                 }
@@ -241,14 +250,20 @@ final class SnapshotEngine {
         }
 
         index.stamp(sourceId, size, mtime);
-        // 该区域目录下父提交残留、但本次解析不存在的对象需要删除
-        for (String path : tree.pathsWithPrefix(objectBase)) {
+        // 本 region 在父提交里有、但本次解析已不存在的对象需要删除（只限本 region 的前缀）
+        for (String path : tree.pathsWithPrefix(chunkPrefix)) {
             if (!producedPaths.contains(path) && store.parentBlobs().containsKey(path)) removals.add(path);
         }
-        if (changedHere == 0 && counter.changed > 0) {
-            // 只是属性变化（例如被 touch），不产生新对象
+        for (String path : tree.pathsWithPrefix(mccPrefix)) {
+            if (!producedPaths.contains(path) && store.parentBlobs().containsKey(path)) removals.add(path);
+        }
+        if (changedHere == 0) {
+            // 仅属性的变化（例如被 touch）不会产生新对象
         }
     }
+
+    /** region 目录名 r.<rx>.<rz> 的坐标部分。 */
+    private static String cx0(int rx, int rz) { return rx + "." + rz; }
 
     private void backupRawFile(WorldTarget world, Path file, Path relative, BackupStore.Tree tree,
                                Counter counter, Set<String> liveSources, Set<String> producedPaths) throws IOException {

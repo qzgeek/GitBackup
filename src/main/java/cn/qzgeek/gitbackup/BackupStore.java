@@ -314,10 +314,21 @@ final class BackupStore implements AutoCloseable {
         int size() { return entries.size(); }
         Map<String, ObjectId> entries() { return entries; }
 
-        /** 前缀查询（按字典序 subMap 实现，避免全表扫描）。 */
-        java.util.Collection<String> pathsWithPrefix(String prefix) {
+        /**
+         * 前缀查询。
+         *
+         * <p>这里刻意不用 {@code subMap(prefix, prefix + '\uffff')}：字符串字面量里写 U+FFFF
+         * 极易写成字面反斜杠（本插件就踩过），上界会排到 'c' 之前，subMap 直接返回空区间，
+         * 于是"未变更区域"的父提交对象被判为需要删除——表现为静默丢备份。改用 tailMap + break。
+         */
+        java.util.List<String> pathsWithPrefix(String prefix) {
             if (prefix.isEmpty()) return java.util.List.copyOf(entries.keySet());
-            return java.util.List.copyOf(entries.subMap(prefix, prefix + '\uffff').keySet());
+            java.util.List<String> out = new java.util.ArrayList<>();
+            for (String key : entries.tailMap(prefix).keySet()) {
+                if (!key.startsWith(prefix)) break;
+                out.add(key);
+            }
+            return out;
         }
     }
 

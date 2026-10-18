@@ -277,17 +277,21 @@ public final class GitBackupPlugin extends JavaPlugin {
                         buildCommitMessage(trigger, targets), manifestRootFiles(), null);
                 if (r.noChanges()) {
                     lastBackupSummary = "无变更（" + Util.TIME.format(Instant.now()) + "）";
+                    getLogger().info("备份无变更（" + trigger + "）");
                     result.complete(lastBackupSummary);
                 } else {
                     String shortId = r.commit().substring(0, 8);
                     lastBackupSummary = shortId + " 对象 " + r.objects() + "（变更 " + r.changed()
                             + "，复用 " + r.reused() + "，写入 " + Util.humanBytes(r.bytes()) + "）" + Util.TIME.format(Instant.now());
+                    getLogger().info("备份完成（" + trigger + "）: " + lastBackupSummary);
                     if (store.hasRemote()) store.push();
                     if (!r.degraded().isEmpty())
                         getLogger().warning("备份存在降级项（这些区块/文件保留上一版本）: " + r.degraded());
                     result.complete(lastBackupSummary);
                 }
             } catch (Throwable t) {
+                // 定时备份没有"发送者"，失败必须落到控制台，否则会静默丢一次备份
+                getLogger().severe("备份失败（" + trigger + "）: " + t);
                 result.completeExceptionally(t);
             } finally {
                 busy.set(false);
@@ -334,8 +338,12 @@ public final class GitBackupPlugin extends JavaPlugin {
                     SnapshotEngine.Result pre = snapshots.backup(List.of(world),
                             "pre-restore " + Util.TIME.format(Instant.now()) + " of " + commit.abbreviate(8).name(),
                             Map.of(), null);
-                    preCommit = pre.commit();
-                    if (preCommit != null) reply(sender, Text.ok("恢复前快照已建立: " + preCommit.substring(0, 8)));
+                    // 若"恢复前快照"没有变化，说明当前状态已被 HEAD 完整记录，
+                    // 直接把 HEAD 当作恢复前快照 —— 否则回滚会因为 preCommit 为空而不可用。
+                    preCommit = pre.commit() != null ? pre.commit() : store.headId();
+                    if (preCommit != null && !preCommit.isBlank())
+                        reply(sender, Text.ok("恢复前快照: " + preCommit.substring(0, 8)
+                                + (pre.noChanges() ? "（沿用当前提交，内容一致）" : "")));
                 }
 
                 RestoreEngine.Plan plan = restoreEngine.plan(commit, world, chunks);
