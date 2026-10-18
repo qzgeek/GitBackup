@@ -558,13 +558,41 @@ public final class GitBackupPlugin extends JavaPlugin {
             try {
                 BackupManifest manifest = readManifest();
                 BackupManifest.RollbackEntry entry = manifest.findRollback(id);
-                if (entry == null) { reply(sender, Text.error("找不到回滚记录: " + id)); return; }
-                if (entry.preCommit == null) { reply(sender, Text.error("该记录没有恢复前快照，无法回滚")); return; }
+                // 每条提前返回都要落日志：命令发送者可能是 RCON，异步消息收不到，
+                // 只回复给发送者等于把失败原因扔掉了（实测排查时完全瞎了）。
+                if (entry == null) {
+                    getLogger().warning("回滚 " + id + " 中止：账本中没有该记录（当前共 "
+                            + manifest.rollbacks.size() + " 条）");
+                    reply(sender, Text.error("找不到回滚记录: " + id));
+                    return;
+                }
+                if (entry.preCommit == null) {
+                    getLogger().warning("回滚 " + id + " 中止：该记录没有恢复前快照");
+                    reply(sender, Text.error("该记录没有恢复前快照，无法回滚"));
+                    return;
+                }
                 Set<RestoreEngine.Chunk> chunks = parseChunks(entry.note);
+                if (chunks.isEmpty()) {
+                    getLogger().warning("回滚 " + id + " 中止：记录里没有区块坐标（note=" + entry.note + "）");
+                    reply(sender, Text.error("该记录没有区块坐标，无法回滚"));
+                    return;
+                }
                 Optional<WorldTarget> target = targetFor(entry.world);
-                if (target.isEmpty()) { reply(sender, Text.error("世界不存在: " + entry.world)); return; }
+                if (target.isEmpty()) {
+                    getLogger().warning("回滚 " + id + " 中止：找不到世界 " + entry.world
+                            + "（当前世界: " + discoverTargets().stream().map(WorldTarget::key).toList() + "）");
+                    reply(sender, Text.error("世界不存在: " + entry.world));
+                    return;
+                }
                 World bukkit = Bukkit.getWorld(target.get().name());
-                if (bukkit == null) { reply(sender, Text.error("世界未加载，无法在线回滚")); return; }
+                if (bukkit == null) {
+                    getLogger().warning("回滚 " + id + " 中止：世界 " + target.get().name()
+                            + " 未加载（key=" + target.get().key() + "）");
+                    reply(sender, Text.error("世界未加载，无法在线回滚"));
+                    return;
+                }
+                getLogger().info("回滚 " + id + " 开始：世界 " + target.get().key()
+                        + "，区块 " + chunks + "，恢复前快照 " + entry.preCommit.substring(0, 8));
                 RevCommit pre = store.resolveCommit(entry.preCommit);
                 RestoreEngine.Plan plan = restoreEngine.plan(pre, target.get(), chunks);
                 if (plan.hotOnly()) {
